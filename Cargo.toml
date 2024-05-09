@@ -1,9 +1,9 @@
 [package]
-name = "lisk-vanity"
+name = "algomania-gpu"
 version = "0.2.0"
 description = "Generate short Lisk addresses"
 keywords = ["cryptocurrency", "nanocurrency", "opencl"]
-authors = ["Simon Warta <simon@warta.it>"]
+authors = [""]
 readme = "README.md"
 repository = "https://github.com/webmaster128/lisk-vanity"
 license = "BSD-2-Clause"
@@ -13,7 +13,6 @@ gpu = ["ocl"]
 default = ["gpu"]
 
 [dependencies]
-##ed25519-dalek = "2.1.1"
 ed25519-dalek = "0.6.1"
 clap = "2.30.0"
 num_cpus = "1.8.0"
@@ -23,7 +22,6 @@ hex = "0.4.0"
 digest = "0.7.2"
 num-traits = "0.2.0"
 sha2 = "0.7"
-#ocl = { version = "0.19.3", optional = true }
 ocl = { version = "0.19.3", optional = true, features = ["opencl_version_2_0", "opencl_version_2_1"] }
 reqwest = { version = "0.12", features = ["json"] }
 algonaut = "0.4.1"

@@ -27,6 +27,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "algomania-gpu"
+version = "0.2.0"
+dependencies = [
+ "algonaut",
+ "base32",
+ "clap",
+ "digest 0.7.2",
+ "ed25519-dalek",
+ "hex",
+ "num-bigint 0.1.43",
+ "num-traits 0.2.18",
+ "num_cpus",
+ "ocl",
+ "rand 0.4.2",
+ "reqwest 0.12.4",
+ "sha2 0.7.1",
+]
+
+[[package]]
 name = "algonaut"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1014,25 +1033,6 @@ name = "linux-raw-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
-
-[[package]]
-name = "lisk-vanity"
-version = "0.2.0"
-dependencies = [
- "algonaut",
- "base32",
- "clap",
- "digest 0.7.2",
- "ed25519-dalek",
- "hex",
- "num-bigint 0.1.43",
- "num-traits 0.2.18",
- "num_cpus",
- "ocl",
- "rand 0.4.2",
- "reqwest 0.12.4",
- "sha2 0.7.1",
-]
 
 [[package]]
 name = "log"
