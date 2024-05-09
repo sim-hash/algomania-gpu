@@ -1,0 +1,26 @@
+os:
+  - linux
+  - osx
+
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+
+cache: cargo
+
+install:
+
+script:
+  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then export CARGO_FLAGS="--no-default-features"; fi
+  - cargo build $CARGO_FLAGS
+  - cargo test $CARGO_FLAGS
+
+# whitelist long living branches to avoid testing feature branches twice (as branch and as pull request)
+branches:
+  only:
+  - master
+
+notifications:
+  email: false
