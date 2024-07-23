@@ -1,4 +1,5 @@
 use std::f64;
+use std::path::Prefix;
 use std::process;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
@@ -14,12 +15,10 @@ extern crate num_bigint;
 extern crate num_cpus;
 extern crate sha2;
 
-extern crate rand;
+
 extern crate algonaut;
 extern crate base32;
-
-use algonaut::transaction::account::Account;
-use num_traits::pow;
+extern crate rand;
 use rand::{OsRng, Rng};
 
 extern crate num_traits;
@@ -29,35 +28,103 @@ use num_traits::ToPrimitive;
 extern crate ocl;
 
 mod cpu;
+use cpu::bip39::entropy_to_mnemonic;
 
 mod derivation;
-use derivation::secret_to_pubkey;
+use derivation::{cut_last_16, pubkey_to_address, secret_to_pubkey, GenerateKeyType};
 
 mod pubkey_matcher;
-use pubkey_matcher::PubkeyMatcher;
+use pubkey_matcher::{max_address, PubkeyMatcher};
+
+use algonaut::transaction::account::Account;
 
 #[cfg(feature = "gpu")]
 mod gpu;
 #[cfg(feature = "gpu")]
 use gpu::Gpu;
 
-use crate::gpu::GpuOptions;
-use crate::pubkey_matcher::max_address;
+#[cfg(not(feature = "gpu"))]
+struct Gpu;
+
+#[cfg(not(feature = "gpu"))]
+impl Gpu {
+    pub fn new(
+        _platform_idx: usize,
+        _device_idx: usize,
+        _threads: usize,
+        _local_work_size: Option<usize>,
+        _max_address_value: u64,
+        _generate_key_type: GenerateKeyType,
+    ) -> Result<Gpu, String> {
+        eprintln!("GPU support has been disabled at compile time.");
+        eprintln!("Rebuild with \"--features gpu\" to enable GPU support.");
+        process::exit(1);
+    }
+
+    pub fn compute(&mut self, _key_root: &[u8]) -> Result<Option<[u8; 32]>, String> {
+        unreachable!()
+    }
+}
+
+fn print_solution(
+    secret_key_material: [u8; 32],
+    secret_key_type: GenerateKeyType,
+    public_key: [u8; 32],
+    simple_output: bool,
+) {
+    if simple_output {
+        println!(
+            "{} {}",
+            hex::encode_upper(&secret_key_material as &[u8]),
+            pubkey_to_address(&public_key),
+        );
+    } else {
+        match secret_key_type {
+            GenerateKeyType::LiskPassphrase => println!(
+                "Found matching account!\nPrivate Key: {}\nAddress:     {}",
+                String::from_utf8(entropy_to_mnemonic(cut_last_16(&secret_key_material))).unwrap(),
+                full_address(pubkey_to_address(&public_key)),
+            ),
+            GenerateKeyType::PrivateKey => println!(
+                "Found matching account!\nPrivate Key: {}{}\nAddress:     {}",
+                hex::encode_upper(&secret_key_material as &[u8]),
+                hex::encode_upper(&public_key),
+                full_address(pubkey_to_address(&public_key)),
+            ),
+        }
+    }
+}
 
 struct ThreadParams {
     limit: usize,
     found_n: Arc<AtomicUsize>,
     output_progress: bool,
     attempts: Arc<AtomicUsize>,
+    simple_output: bool,
+    generate_key_type: GenerateKeyType,
     matcher: Arc<PubkeyMatcher>,
 }
 
+fn full_address(address: u64) -> String {
+    return format!("{}L", address);
+}
+
+
 fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
 
-    let matches  = params.matcher.matches(secret_to_pubkey(key_material));
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+//    println!("Yolo, it's me yes I'm here...................................................................................................");
+
+    let matches = params.matcher.matches(secret_to_pubkey(key_material));
 
     if matches {
-
         let wallet = Account::from_seed(key_material);
 
         if !params.matcher.starts_with(wallet.address().to_string()) {
@@ -65,7 +132,12 @@ fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
         }
 
         println!();
-        println!("Found matching account!\nPrivate Key: {:?} \nAddress: {} \nMnemonic: {}", wallet.seed(), wallet.address(), wallet.mnemonic());
+        println!(
+            "Found matching account!\nPrivate Key: {:?} \nAddress: {} \nMnemonic: {}",
+            wallet.seed(),
+            wallet.address(),
+            wallet.mnemonic()
+        );
         println!();
 
         // TODO remove this
@@ -82,6 +154,29 @@ fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
     matches
 }
 
+//fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
+//    let public_key = secret_to_pubkey(key_material, params.generate_key_type);
+//    let matches = params.matcher.matches(&public_key);
+//    if matches {
+//        if params.output_progress {
+//            eprintln!("");
+//        }
+//        print_solution(
+//            key_material,
+//            params.generate_key_type,
+//            public_key,
+//            params.simple_output,
+//        );
+//        if params.limit != 0
+//            && params.found_n.fetch_add(1, atomic::Ordering::Relaxed) + 1 >= params.limit
+//        {
+//            process::exit(0);
+//        }
+//    }
+//    matches
+//}
+//
+
 fn main() {
     let args = clap::App::new("lisk-vanity")
         .version(env!("CARGO_PKG_VERSION"))
@@ -93,13 +188,6 @@ fn main() {
                 .default_value("14")
                 .required_unless("suffix")
                 .help("The max length for the address"),
-        )
-        .arg(
-            clap::Arg::with_name("cpu_threads")
-                .short("t")
-                .long("cpu-threads")
-                .value_name("N")
-                .help("The number of CPU threads to use [default: number of cores minus one]"),
         )
         .arg(
             clap::Arg::with_name("gpu")
@@ -134,6 +222,11 @@ fn main() {
                 .help("Disable progress output"),
         )
         .arg(
+            clap::Arg::with_name("simple_output")
+                .long("simple-output")
+                .help("Output found keys in the form \"[key] [address]\""),
+        )
+        .arg(
             clap::Arg::with_name("gpu_platform")
                 .long("gpu-platform")
                 .value_name("INDEX")
@@ -149,16 +242,22 @@ fn main() {
         )
         .get_matches();
 
-    // TODO change this
-    let max_length: String = args
+    let prefix: String = args
         .value_of("length")
         .unwrap()
         .parse()
         .expect("Failed to parse LENGTH");
 
-    // TODO don't forget to validate the matcher_base
-    let matcher_base = PubkeyMatcher::new(max_length.clone());
+    println!("Prefix {:?}", prefix);
 
+    // check prefix length here...
+    // assert!(prefix.len() >= 1 && prefix.len() <= 8);
+
+    // not yet a mask; soon
+    let mask = base32::decode(base32::Alphabet::RFC4648 { padding: (true) }, &prefix).unwrap();
+    println!("Mask byte prefix is: {:?}", mask);
+
+    let matcher_base = PubkeyMatcher::new(prefix, mask.clone());
     let estimated_attempts = matcher_base.estimated_attempts();
     let matcher_base = Arc::new(matcher_base);
     let limit = args
@@ -169,47 +268,10 @@ fn main() {
     let found_n_base = Arc::new(AtomicUsize::new(0));
     let attempts_base = Arc::new(AtomicUsize::new(0));
     let output_progress = !args.is_present("no_progress");
+    let simple_output = args.is_present("simple_output");
     let _generate_passphrase = args.is_present("generate_passphrase");
 
-    // test this...???
-    let gpu_global_work_size = args.value_of("gpu_global_work_size").map(|s| {
-        s.parse()
-            .expect("Failed to parse GPU local work size option")
-    });
-
-    let cpu_threads = args
-        .value_of("cpu_threads")
-        .map(|s| s.parse().expect("Failed to parse thread count option"))
-        .unwrap_or_else(|| num_cpus::get() - 1);
-    let mut thread_handles = Vec::with_capacity(cpu_threads);
-    eprintln!("Estimated attempts needed: {}", estimated_attempts);
-    for _ in 0..cpu_threads {
-        let mut rng = OsRng::new().expect("Failed to get RNG for seed");
-        let mut key_or_seed = [0u8; 32];
-        rng.fill_bytes(&mut key_or_seed);
-        let params = ThreadParams {
-            limit,
-            output_progress,
-            matcher: matcher_base.clone(),
-            found_n: found_n_base.clone(),
-            attempts: attempts_base.clone(),
-        };
-        thread_handles.push(thread::spawn(move || loop {
-            if check_solution(&params, key_or_seed) {
-                rng.fill_bytes(&mut key_or_seed);
-            } else {
-                if output_progress {
-                    params.attempts.fetch_add(1, atomic::Ordering::Relaxed);
-                }
-                for byte in key_or_seed.iter_mut().rev() {
-                    *byte = byte.wrapping_add(1);
-                    if *byte != 0 {
-                        break;
-                    }
-                }
-            }
-        }));
-    }
+    let gen_key_type = GenerateKeyType::PrivateKey;
 
     let mut gpu_thread = None;
     if args.is_present("gpu") {
@@ -236,26 +298,29 @@ fn main() {
         let params = ThreadParams {
             limit,
             output_progress,
+            simple_output,
+            generate_key_type: gen_key_type.clone(),
             matcher: matcher_base.clone(),
             found_n: found_n_base.clone(),
             attempts: attempts_base.clone(),
         };
-
-        // TODO whare is gpu_local_work size and gpu_global_work_size
-        let mut gpu = Gpu::new(GpuOptions {
-            platform_idx: gpu_platform,
-            device_idx: gpu_device,
-            threads: gpu_threads,
-            local_work_size: gpu_local_work_size,
-            global_work_size: gpu_global_work_size,
-            max_address_value: max_address(max_length.len()),
-
-        })
+        let mut gpu = Gpu::new(
+            gpu_platform,
+            gpu_device,
+            gpu_threads,
+            gpu_local_work_size,
+            mask,
+            gen_key_type,
+        )
         .unwrap();
         gpu_thread = Some(thread::spawn(move || {
             let mut rng = OsRng::new().expect("Failed to get RNG for seed");
+            let mut count = 0;
             loop {
+//                println!("Count {}", count);
                 rng.fill_bytes(&mut key_base);
+//                println!("\n Key_base {:?} \n", key_base);
+                count += 1;
                 let found = gpu
                     .compute(&key_base)
                     .expect("Failed to run GPU computation");
@@ -264,14 +329,15 @@ fn main() {
                         .attempts
                         .fetch_add(gpu_threads, atomic::Ordering::Relaxed);
                 }
-
                 if let Some(found_private_key) = found {
                     if !check_solution(&params, found_private_key) {
                         eprintln!(
-                            "GPU returned non-matching solution: {}", hex::encode_upper(&found_private_key)
+                            "GPU returned non-matching solution: {}",
+                            hex::encode_upper(&found_private_key)
                         );
                     }
                 } else {
+                    //println!("Yolo, didn't find key...");
                     // just continue
                 }
             }
@@ -292,14 +358,11 @@ fn main() {
                 "\rTried {} keys (~{:.2}%; {:.1} keys/s)",
                 attempts, estimated_percent, keys_per_second,
             );
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(250));
         });
     }
     if let Some(gpu_thread) = gpu_thread {
         gpu_thread.join().expect("Failed to join GPU thread");
-    }
-    for handle in thread_handles {
-        handle.join().expect("Failed to join thread");
     }
     eprintln!("No computation devices specified");
     process::exit(1);
