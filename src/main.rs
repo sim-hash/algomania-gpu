@@ -1,5 +1,4 @@
 use std::f64;
-use std::path::Prefix;
 use std::process;
 use std::sync::atomic;
 use std::sync::atomic::AtomicUsize;
@@ -28,13 +27,12 @@ use num_traits::ToPrimitive;
 extern crate ocl;
 
 mod cpu;
-use cpu::bip39::entropy_to_mnemonic;
 
 mod derivation;
-use derivation::{cut_last_16, pubkey_to_address, secret_to_pubkey, GenerateKeyType};
+use derivation::{secret_to_pubkey, GenerateKeyType};
 
 mod pubkey_matcher;
-use pubkey_matcher::{max_address, PubkeyMatcher};
+use pubkey_matcher::PubkeyMatcher;
 
 use algonaut::transaction::account::Account;
 
@@ -42,58 +40,6 @@ use algonaut::transaction::account::Account;
 mod gpu;
 #[cfg(feature = "gpu")]
 use gpu::Gpu;
-
-#[cfg(not(feature = "gpu"))]
-struct Gpu;
-
-#[cfg(not(feature = "gpu"))]
-impl Gpu {
-    pub fn new(
-        _platform_idx: usize,
-        _device_idx: usize,
-        _threads: usize,
-        _local_work_size: Option<usize>,
-        _max_address_value: u64,
-        _generate_key_type: GenerateKeyType,
-    ) -> Result<Gpu, String> {
-        eprintln!("GPU support has been disabled at compile time.");
-        eprintln!("Rebuild with \"--features gpu\" to enable GPU support.");
-        process::exit(1);
-    }
-
-    pub fn compute(&mut self, _key_root: &[u8]) -> Result<Option<[u8; 32]>, String> {
-        unreachable!()
-    }
-}
-
-fn print_solution(
-    secret_key_material: [u8; 32],
-    secret_key_type: GenerateKeyType,
-    public_key: [u8; 32],
-    simple_output: bool,
-) {
-    if simple_output {
-        println!(
-            "{} {}",
-            hex::encode_upper(&secret_key_material as &[u8]),
-            pubkey_to_address(&public_key),
-        );
-    } else {
-        match secret_key_type {
-            GenerateKeyType::LiskPassphrase => println!(
-                "Found matching account!\nPrivate Key: {}\nAddress:     {}",
-                String::from_utf8(entropy_to_mnemonic(cut_last_16(&secret_key_material))).unwrap(),
-                full_address(pubkey_to_address(&public_key)),
-            ),
-            GenerateKeyType::PrivateKey => println!(
-                "Found matching account!\nPrivate Key: {}{}\nAddress:     {}",
-                hex::encode_upper(&secret_key_material as &[u8]),
-                hex::encode_upper(&public_key),
-                full_address(pubkey_to_address(&public_key)),
-            ),
-        }
-    }
-}
 
 struct ThreadParams {
     limit: usize,
@@ -104,11 +50,6 @@ struct ThreadParams {
     generate_key_type: GenerateKeyType,
     matcher: Arc<PubkeyMatcher>,
 }
-
-fn full_address(address: u64) -> String {
-    return format!("{}L", address);
-}
-
 
 fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
 
@@ -153,29 +94,6 @@ fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
     }
     matches
 }
-
-//fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
-//    let public_key = secret_to_pubkey(key_material, params.generate_key_type);
-//    let matches = params.matcher.matches(&public_key);
-//    if matches {
-//        if params.output_progress {
-//            eprintln!("");
-//        }
-//        print_solution(
-//            key_material,
-//            params.generate_key_type,
-//            public_key,
-//            params.simple_output,
-//        );
-//        if params.limit != 0
-//            && params.found_n.fetch_add(1, atomic::Ordering::Relaxed) + 1 >= params.limit
-//        {
-//            process::exit(0);
-//        }
-//    }
-//    matches
-//}
-//
 
 fn main() {
     let args = clap::App::new("lisk-vanity")
@@ -315,12 +233,12 @@ fn main() {
         .unwrap();
         gpu_thread = Some(thread::spawn(move || {
             let mut rng = OsRng::new().expect("Failed to get RNG for seed");
-            let mut count = 0;
+//            let mut count = 0;
             loop {
 //                println!("Count {}", count);
                 rng.fill_bytes(&mut key_base);
 //                println!("\n Key_base {:?} \n", key_base);
-                count += 1;
+                //count += 1;
                 let found = gpu
                     .compute(&key_base)
                     .expect("Failed to run GPU computation");

@@ -1,8 +1,9 @@
 use std::convert::TryFrom;
 
-use cpu::bip39::entropy_to_mnemonic;
 use ed25519_dalek::{PublicKey, SecretKey};
 use sha2::{Digest, Sha256, Sha512};
+
+pub const ADDRESS_ALPHABET: &[u8] = b"13456789abcdefghijkmnopqrstuwxyz";
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum GenerateKeyType {
