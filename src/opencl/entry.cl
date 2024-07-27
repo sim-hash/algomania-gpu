@@ -12,6 +12,8 @@
 // 	printf("\n");
 // }
 
+
+
 /**
  * result:
  *     The 32 byte key material that is written once a matching address was found.
@@ -33,11 +35,15 @@
 __kernel void generate_pubkey(
 	__global uchar *result,
 	__constant uchar *key_material_base,
-	uint64_t max_address_value,
+	__constant uchar *mask,
+	uchar size,
 	uchar generate_key_type
 ) {
+
+	// printf("How many times here...");
 	uchar key_material[32];
 	for (size_t i = 0; i < 32; i++) {
+    	//printf("(%i) ", key_material_base[i]);
 		key_material[i] = key_material_base[i];
 	}
 
@@ -55,51 +61,74 @@ __kernel void generate_pubkey(
 
 	uchar menomic_hash[32];
 	uchar *key;
-	if (generate_key_type == 0) {
-		// lisk passphrase
-		bip39_entropy_to_mnemonic(key_material+16, menomic_hash);
-		key = menomic_hash;
-	} else {
-		// privkey or extended privkey
-		key = key_material;
-	}
+
+	// privkey or extended privkey
+	key = key_material;
 	bignum256modm a;
 	ge25519 ALIGN(16) A;
-	if (generate_key_type != 2) {
-		u32 in[32] = { 0 }; // must be 128 bytes zero-filled for sha512_update to work
-		uchar hash[64];
 
-		sha512_ctx_t hasher;
-		sha512_init (&hasher);
+	u32 in[32] = { 0 }; // must be 128 bytes zero-filled for sha512_update to work
+	uchar hash[64];
 
-		to_32bytes_sha2_input(in, key);
-		// print_bytes(in_data, 32);
-		// print_words(in, 8);
-		sha512_update(&hasher, in, 32);
+	sha512_ctx_t hasher;
+	sha512_init (&hasher);
 
-		sha512_final(&hasher);
-		from_sha512_result(hash, hasher.h);
+	to_32bytes_sha2_input(in, key);
+	// print_bytes(in_data, 32);
+	// print_words(in, 8);
+	sha512_update(&hasher, in, 32);
 
-		// printf("(%i) ", hasher.len);
-		// print_bytes(hash, 64);
+	sha512_final(&hasher);
+	from_sha512_result(hash, hasher.h);
 
-		hash[0] &= 248;
-		hash[31] &= 127;
-		hash[31] |= 64;
-		expand256_modm(a, hash, 32);
-	} else {
-		expand256_modm(a, key, 32);
-	}
+	// printf("(%i) ", hasher.len);
+	// print_bytes(hash, 64);
+
+	hash[0] &= 248;
+	hash[31] &= 127;
+	hash[31] |= 64;
+	expand256_modm(a, hash, 32);
 	ge25519_scalarmult_base_niels(&A, a);
 
 	uchar pubkey[32];
 	ge25519_pack(pubkey, &A);
 
-	uint64_t address = pubkey_to_address(pubkey);
+	int match = 1;
 
-	if (address <= max_address_value) {
-		for (uchar i = 0; i < 32; i++) {
-			result[i] = key_material[i];
+//	for (uint i = 0; i < size; i++) {
+//	  printf("(%i)\n", mask[i]);
+//	}
+
+
+//uchar test[] = {168, 26, 137};
+
+	for (uint i = 0; i < size; i++) {
+//    	printf("(%i) ", pubkey[i]);
+//		printf("(%i) ", mask[i]);
+
+		if (pubkey[i] != mask[i]) {
+			  match = 0;
+			  break;
 		}
+
 	}
+
+	if (match) {
+	   for (uchar i = 0; i < 32; i++) {
+		   result[i] = key_material[i];
+	   }
+	}
+
+//	for (uchar i = 0; i < 32; i++) {
+//		result[i] = key_material[i];
+//	}
+
+//	uint64_t address = pubkey_to_address(pubkey);
+//
+//  max_address_value doesn't exist anymore...
+//	if (address <= max_address_value) {
+//		for (uchar i = 0; i < 32; i++) {
+//			result[i] = key_material[i];
+//		}
+//	}
 }
