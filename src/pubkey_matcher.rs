@@ -1,38 +1,58 @@
+use std::cmp;
+
 use num_bigint::BigInt;
-use num_traits::pow;
 
-use derivation::pubkey_to_address;
-
-// largest valid address
-pub fn max_address(input: &str) -> u64 {
-    let mut result: u64 = 0;
-    for (i, c) in input.chars().enumerate() {
-        let char_value = c as u64;
-        result += char_value * 10u64.pow((input.len() - 1 - i) as u32);
-    }
-    result
-}
-
+#[derive(Clone)]
 pub struct PubkeyMatcher {
-    prefix: String,
+    req: Vec<u8>,
     mask: Vec<u8>,
+    prefix_len: usize,
 }
 
 impl PubkeyMatcher {
-
-    pub fn new(prefix: String, mask: Vec<u8>) -> PubkeyMatcher {
+    pub fn new(mut req: Vec<u8>, mut mask: Vec<u8>) -> PubkeyMatcher {
+        debug_assert!(req.iter().zip(mask.iter()).all(|(&r, &m)| r & !m == 0));
+        let prefix_len = mask
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|&(_i, &m)| m != 0)
+            .map(|(i, _m)| i + 1)
+            .unwrap_or(0);
+        assert!(prefix_len <= 37);
+        req.truncate(prefix_len);
+        mask.truncate(prefix_len);
+        assert!(req.len() >= prefix_len);
+        assert!(mask.len() >= prefix_len);
         PubkeyMatcher {
-            prefix,
+            req,
             mask,
+            prefix_len,
         }
     }
 
-    pub fn matches(&self, pubkey: [u8; 32]) -> bool {
-        return self.mask == pubkey[..self.mask.len()]
+    #[allow(dead_code)]
+    pub fn req(&self) -> &[u8] {
+        &self.req
     }
 
-    pub fn starts_with(&self, address: String) -> bool {
-        address.starts_with(&self.prefix)
+    #[allow(dead_code)]
+    pub fn mask(&self) -> &[u8] {
+        &self.mask
+    }
+
+    #[allow(dead_code)]
+    pub fn prefix_len(&self) -> usize {
+        self.prefix_len
+    }
+
+    pub fn matches(&self, pubkey: &[u8; 32]) -> bool {
+        for i in 0..cmp::min(self.prefix_len, 32) {
+            if pubkey[i] & self.mask[i] != self.req[i] {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn estimated_attempts(&self) -> BigInt {
@@ -42,48 +62,4 @@ impl PubkeyMatcher {
         }
         BigInt::from(1) << bits_in_mask
     }
-}
-
-#[cfg(test)]
-mod tests {
-    // importing names from outer (for mod tests) scope.
-    use super::*;
-
-//    #[test]
-//    fn test_max_address() {
-//        assert_eq!(max_address(2000), 18446744073709551615u64);
-//        assert_eq!(max_address(200), 18446744073709551615u64);
-//        assert_eq!(max_address(20), 18446744073709551615u64);
-//        assert_eq!(max_address(15), 999999999999999u64);
-//        assert_eq!(max_address(10), 9999999999u64);
-//        assert_eq!(max_address(2), 99u64);
-//        assert_eq!(max_address(1), 9u64);
-//    }
-
-//    #[test]
-//    fn test_estimated_attempts() {
-//        let matcher_all = PubkeyMatcher::new(10000);
-//        let estimated = matcher_all.estimated_attempts();
-//        assert_eq!(estimated, BigInt::from(1));
-//
-//        // truncate(2^64 / 10^15)
-//        let matcher_fifteen = PubkeyMatcher::new(15);
-//        let estimated = matcher_fifteen.estimated_attempts();
-//        assert_eq!(estimated, BigInt::from(18446));
-//
-//        // truncate(2^64 / 10^10)
-//        let matcher_ten = PubkeyMatcher::new(10);
-//        let estimated = matcher_ten.estimated_attempts();
-//        assert_eq!(estimated, BigInt::from(1844674407));
-//
-//        // truncate(2^64 / 10^5)
-//        let matcher_five = PubkeyMatcher::new(5);
-//        let estimated = matcher_five.estimated_attempts();
-//        assert_eq!(estimated, BigInt::from(184467440737095u64));
-//
-//        // truncate(2^64 / 10^3)
-//        let matcher_three = PubkeyMatcher::new(3);
-//        let estimated = matcher_three.estimated_attempts();
-//        assert_eq!(estimated, BigInt::from(18446744073709551u64));
-//    }
 }

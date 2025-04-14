@@ -1,21 +1,18 @@
-// inline void print_bytes(const uchar *data, size_t len) {
-// 	for (size_t i = 0; i < len; ++i) {
-// 		printf("%.2x", data[i]);
-// 	}
-// 	printf("\n");
-// }
-
-// inline void print_words(const u32 *data, size_t len) {
-// 	for (size_t i = 0; i < len; ++i) {
-// 		printf("%.8x ", data[i]);
-// 	}
-// 	printf("\n");
-// }
+inline void print_bytes(const uchar *data, size_t len) {
+ 	for (size_t i = 0; i < len; ++i) {
+ 		printf("%.2x", data[i]);
+ 	}
+ 	printf("\n");
+ }
 
 
+ inline void print_words(const u32 *data, size_t len) {
+ 	for (size_t i = 0; i < len; ++i) {
+ 		printf("%.8x ", data[i]); }
+ 	printf("\n");
+ }
 
-/**
- * result:
+/** * result:
  *     The 32 byte key material that is written once a matching address was found.
  *     This is all zero by default and any non-zero result indicates a match. All local
  *     threads write to the same global memory, so we can get corrupted results if
@@ -27,37 +24,15 @@
  * max_address_value:
  *     The largest address value that is considered a match, e.g. 999999999999 when
  *     looking for 12 digit addresses.
- * generate_key_type:
- *     0 means Lisk passphrase encoded as 16 bytes of BIP39 entropy
- *     1 means Ed25519 private key (seed) encoded as 32 bytes
- *     2 means The curve point of the blinding factor (currently unsupported; see https://github.com/PlasmaPower/nano-vanity for proper usage)
  */
-__kernel void generate_pubkey(
-	__global uchar *result,
-	__constant uchar *key_material_base,
-	__constant uchar *mask,
-	uchar size,
-	uchar generate_key_type
-) {
-
-	// printf("How many times here...");
+__kernel void generate_pubkey (__global unsigned long *result, __global uchar *key_material_base, __global uchar *pub_req, __global uchar *pub_mask, uchar prefix_len, __global uchar *public_offset) {
+	size_t const thread = get_global_id (0);
 	uchar key_material[32];
 	for (size_t i = 0; i < 32; i++) {
-    	//printf("(%i) ", key_material_base[i]);
 		key_material[i] = key_material_base[i];
 	}
 
-	uint64_t const thread_id = get_global_id(0);
-	// For passphrases in key_material, the first 16 bytes are ignored.
-	// We XOR the big endian encoded thread ID into the last 8 bytes.
-	key_material[31-7] ^= (thread_id >> (7*8)) & 0xFF;
-	key_material[31-6] ^= (thread_id >> (6*8)) & 0xFF;
-	key_material[31-5] ^= (thread_id >> (5*8)) & 0xFF;
-	key_material[31-4] ^= (thread_id >> (4*8)) & 0xFF;
-	key_material[31-3] ^= (thread_id >> (3*8)) & 0xFF;
-	key_material[31-2] ^= (thread_id >> (2*8)) & 0xFF;
-	key_material[31-1] ^= (thread_id >> (1*8)) & 0xFF;
-	key_material[31-0] ^= (thread_id >> (0*8)) & 0xFF;
+	*((size_t *) key_material) += thread;
 
 	uchar menomic_hash[32];
 	uchar *key;
@@ -71,64 +46,79 @@ __kernel void generate_pubkey(
 	uchar hash[64];
 
 	sha512_ctx_t hasher;
+
 	sha512_init (&hasher);
 
 	to_32bytes_sha2_input(in, key);
-	// print_bytes(in_data, 32);
-	// print_words(in, 8);
+
 	sha512_update(&hasher, in, 32);
-
 	sha512_final(&hasher);
+
 	from_sha512_result(hash, hasher.h);
-
-	// printf("(%i) ", hasher.len);
-	// print_bytes(hash, 64);
-
 	hash[0] &= 248;
 	hash[31] &= 127;
 	hash[31] |= 64;
+
 	expand256_modm(a, hash, 32);
 	ge25519_scalarmult_base_niels(&A, a);
 
 	uchar pubkey[32];
 	ge25519_pack(pubkey, &A);
 
-	int match = 1;
-
-//	for (uint i = 0; i < size; i++) {
-//	  printf("(%i)\n", mask[i]);
-//	}
-
-
-//uchar test[] = {168, 26, 137};
-
-	for (uint i = 0; i < size; i++) {
-//    	printf("(%i) ", pubkey[i]);
-//		printf("(%i) ", mask[i]);
-
-		if (pubkey[i] != mask[i]) {
-			  match = 0;
-			  break;
+	for (uchar i = 0; i < prefix_len; i++) {
+		if ((pubkey[i] & pub_mask[i]) != pub_req[i]) {
+			return;
 		}
-
 	}
 
-	if (match) {
-	   for (uchar i = 0; i < 32; i++) {
-		   result[i] = key_material[i];
-	   }
-	}
-
-//	for (uchar i = 0; i < 32; i++) {
-//		result[i] = key_material[i];
-//	}
-
-//	uint64_t address = pubkey_to_address(pubkey);
+//    // this is algomania with req/mask
+//    // this is algomania with req/mask
+//    // this is algomania with req/mask
 //
-//  max_address_value doesn't exist anymore...
-//	if (address <= max_address_value) {
-//		for (uchar i = 0; i < 32; i++) {
-//			result[i] = key_material[i];
-//		}
+//	printf("\nStart\n");
+//
+//	printf("Generated pubkey -> (%i) ", pubkey[0]);
+//	printf("(%i) ", pubkey[1]);
+//	printf("(%i) ", pubkey[2]);
+//	printf("(%i) ", pubkey[3]);
+//
+//	printf("\n");
+//	printf("\n");
+//
+//	printf("Mask prefix -> (%i) ", pub_mask[0]);
+//	printf("(%i) ", pub_mask[1]);
+//	printf("(%i) ", pub_mask[2]);
+//	printf("(%i) ", pub_mask[3]);
+//
+//	printf("\n");
+//	printf("\n");
+//
+//	printf("Req prefix -> (%i) ", pub_req[0]);
+//	printf("(%i) ", pub_req[1]);
+//	printf("(%i) ", pub_req[2]);
+//	printf("(%i) ", pub_req[3]);
+//
+//	printf("\n");
+//	printf("\n");
+//
+//	printf("Pubkey & Pub mask prefix -> (%i)", pubkey[0] & pub_mask[0]);
+//	printf("(%i) ", pubkey[1] & pub_mask[1]);
+//	printf("(%i) ", pubkey[2] & pub_mask[2]);
+//	printf("(%i) ", pubkey[3] & pub_mask[3]);
+//
+//	printf("\n");
+//	printf("\n");
+//
+//	for (size_t i = 0; i < 32; i++) {
+//		printf("(%i) ", pubkey[i]);
 //	}
+//
+////	for (uchar i = 0; i < 32; i++) {
+////			result[i] = key_material[i];
+////		}
+//
+//		printf("\n");
+//		printf("\n");
+
+	*result = thread;
 }

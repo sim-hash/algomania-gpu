@@ -91,6 +91,16 @@ typedef enum sha2_64_constants
   SHA512M_G=0x1f83d9abfb41bd6b,
   SHA512M_H=0x5be0cd19137e2179,
 
+  // SHA-512/256 Initial Hash Values
+  SHA512_256M_A=0x22312194fc2bf72c,
+  SHA512_256M_B=0x9f555fa3c84c64c2,
+  SHA512_256M_C=0x2393b86b6f53b151,
+  SHA512_256M_D=0x963877195940eabd,
+  SHA512_256M_E=0x96283ee2a88effe3,
+  SHA512_256M_F=0xbe5e1e2553863992,
+  SHA512_256M_G=0x2b0199fc2c85b8aa,
+  SHA512_256M_H=0x0eb72ddc81c52ca2,
+
   // SHA-384/512 Constants
   SHA512C00=0x428a2f98d728ae22,
   SHA512C01=0x7137449123ef65cd,
@@ -1021,3 +1031,74 @@ void sha512_final (sha512_ctx_t *ctx)
   sha512_transform (ctx->w0, ctx->w1, ctx->w2, ctx->w3, ctx->w4, ctx->w5, ctx->w6, ctx->w7, ctx->h);
 }
 
+void sha512_256_init (sha512_ctx_t *ctx)
+{
+  ctx->h[0] = SHA512_256M_A;
+  ctx->h[1] = SHA512_256M_B;
+  ctx->h[2] = SHA512_256M_C;
+  ctx->h[3] = SHA512_256M_D;
+  ctx->h[4] = SHA512_256M_E;
+  ctx->h[5] = SHA512_256M_F;
+  ctx->h[6] = SHA512_256M_G;
+  ctx->h[7] = SHA512_256M_H;
+
+  ctx->w0[0] = 0;
+  ctx->w0[1] = 0;
+  ctx->w0[2] = 0;
+  ctx->w0[3] = 0;
+  ctx->w1[0] = 0;
+  ctx->w1[1] = 0;
+  ctx->w1[2] = 0;
+  ctx->w1[3] = 0;
+  ctx->w2[0] = 0;
+  ctx->w2[1] = 0;
+  ctx->w2[2] = 0;
+  ctx->w2[3] = 0;
+  ctx->w3[0] = 0;
+  ctx->w3[1] = 0;
+  ctx->w3[2] = 0;
+  ctx->w3[3] = 0;
+  ctx->w4[0] = 0;
+  ctx->w4[1] = 0;
+  ctx->w4[2] = 0;
+  ctx->w4[3] = 0;
+  ctx->w5[0] = 0;
+  ctx->w5[1] = 0;
+  ctx->w5[2] = 0;
+  ctx->w5[3] = 0;
+  ctx->w6[0] = 0;
+  ctx->w6[1] = 0;
+  ctx->w6[2] = 0;
+  ctx->w6[3] = 0;
+  ctx->w7[0] = 0;
+  ctx->w7[1] = 0;
+  ctx->w7[2] = 0;
+  ctx->w7[3] = 0;
+
+  ctx->len = 0;
+}
+
+
+void sha512_256_final (sha512_ctx_t *ctx, u32 *digest)
+{
+
+	sha512_final (ctx);
+
+	u64 tmp;
+
+	tmp = ctx->h[0];
+	digest[0] = h32_from_64_S (tmp);
+	digest[1] = l32_from_64_S (tmp);
+
+	tmp = ctx->h[1];
+	digest[2] = h32_from_64_S (tmp);
+	digest[3] = l32_from_64_S (tmp);
+
+	tmp = ctx->h[2];
+	digest[4] = h32_from_64_S (tmp);
+	digest[5] = l32_from_64_S (tmp);
+
+	tmp = ctx->h[3];
+	digest[6] = h32_from_64_S (tmp);
+	digest[7] = l32_from_64_S (tmp);
+}
