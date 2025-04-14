@@ -5,7 +5,6 @@ inline void print_bytes(const uchar *data, size_t len) {
  	printf("\n");
  }
 
-
  inline void print_words(const u32 *data, size_t len) {
  	for (size_t i = 0; i < len; ++i) {
  		printf("%.8x ", data[i]); }
@@ -70,55 +69,6 @@ __kernel void generate_pubkey (__global unsigned long *result, __global uchar *k
 			return;
 		}
 	}
-
-//    // this is algomania with req/mask
-//    // this is algomania with req/mask
-//    // this is algomania with req/mask
-//
-//	printf("\nStart\n");
-//
-//	printf("Generated pubkey -> (%i) ", pubkey[0]);
-//	printf("(%i) ", pubkey[1]);
-//	printf("(%i) ", pubkey[2]);
-//	printf("(%i) ", pubkey[3]);
-//
-//	printf("\n");
-//	printf("\n");
-//
-//	printf("Mask prefix -> (%i) ", pub_mask[0]);
-//	printf("(%i) ", pub_mask[1]);
-//	printf("(%i) ", pub_mask[2]);
-//	printf("(%i) ", pub_mask[3]);
-//
-//	printf("\n");
-//	printf("\n");
-//
-//	printf("Req prefix -> (%i) ", pub_req[0]);
-//	printf("(%i) ", pub_req[1]);
-//	printf("(%i) ", pub_req[2]);
-//	printf("(%i) ", pub_req[3]);
-//
-//	printf("\n");
-//	printf("\n");
-//
-//	printf("Pubkey & Pub mask prefix -> (%i)", pubkey[0] & pub_mask[0]);
-//	printf("(%i) ", pubkey[1] & pub_mask[1]);
-//	printf("(%i) ", pubkey[2] & pub_mask[2]);
-//	printf("(%i) ", pubkey[3] & pub_mask[3]);
-//
-//	printf("\n");
-//	printf("\n");
-//
-//	for (size_t i = 0; i < 32; i++) {
-//		printf("(%i) ", pubkey[i]);
-//	}
-//
-////	for (uchar i = 0; i < 32; i++) {
-////			result[i] = key_material[i];
-////		}
-//
-//		printf("\n");
-//		printf("\n");
 
 	*result = thread;
 }
