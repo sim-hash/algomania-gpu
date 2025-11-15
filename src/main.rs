@@ -8,17 +8,18 @@ use std::time::{Duration, Instant};
 
 extern crate clap;
 extern crate digest;
-extern crate ed25519_dalek;
 extern crate hex;
-extern crate num_bigint;
 extern crate num_cpus;
-extern crate sha2;
-
-
 extern crate algonaut;
-extern crate base32;
+extern crate ring;
+extern crate sha2;
+extern crate byteorder;
+
 extern crate rand;
-use rand::{OsRng, Rng};
+use rand::rngs::OsRng;
+use rand::RngCore;
+
+extern crate num_bigint;
 
 extern crate num_traits;
 use num_traits::ToPrimitive;
@@ -26,65 +27,43 @@ use num_traits::ToPrimitive;
 #[cfg(feature = "gpu")]
 extern crate ocl;
 
-mod cpu;
+use algonaut::transaction::account::Account;
 
 mod derivation;
-use derivation::{secret_to_pubkey, GenerateKeyType};
+use derivation::ADDRESS_ALPHABET;
 
 mod pubkey_matcher;
 use pubkey_matcher::PubkeyMatcher;
 
-use algonaut::transaction::account::Account;
+#[cfg(feature = "gpu")]
+mod gpu_impl;
 
-#[cfg(feature = "gpu")]
 mod gpu;
-#[cfg(feature = "gpu")]
-use gpu::Gpu;
+use gpu::{Gpu, GpuOptions};
 
 struct ThreadParams {
     limit: usize,
     found_n: Arc<AtomicUsize>,
-    output_progress: bool,
     attempts: Arc<AtomicUsize>,
-    simple_output: bool,
-    generate_key_type: GenerateKeyType,
     matcher: Arc<PubkeyMatcher>,
 }
 
+
 fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
 
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-//    println!("Yolo, it's me yes I'm here...................................................................................................");
-
-    let matches = params.matcher.matches(secret_to_pubkey(key_material));
+    let public_key = derivation::ed25519_privkey_to_pubkey(&key_material);
+    let matches = params.matcher.matches(&public_key);
 
     if matches {
+
         let wallet = Account::from_seed(key_material);
-
-        if !params.matcher.starts_with(wallet.address().to_string()) {
-            return false;
-        }
-
-        println!();
         println!(
-            "Found matching account!\nPrivate Key: {:?} \nAddress: {} \nMnemonic: {}",
+            "\nFound matching account!\nPrivate Key: {:?} \nAddress: {} \nMnemonic: {}",
             wallet.seed(),
             wallet.address(),
             wallet.mnemonic()
         );
         println!();
-
-        // TODO remove this
-        if params.output_progress {
-            eprintln!("");
-        }
 
         if params.limit != 0
             && params.found_n.fetch_add(1, atomic::Ordering::Relaxed) + 1 >= params.limit
@@ -95,87 +74,158 @@ fn check_solution(params: &ThreadParams, key_material: [u8; 32]) -> bool {
     matches
 }
 
+fn char_to_base32_value(ch: char) -> Option<u8> {
+    if ch == '.' || ch == '*' {
+        Some(0)
+    } else {
+        ADDRESS_ALPHABET.iter().position(|&c| (c as char) == ch).map(|p| p as u8)
+    }
+}
+
+fn create_req_mask_for_prefix(prefix: &str) -> (Vec<u8>, Vec<u8>) {
+    let mut req = vec![0u8; 36];
+    let mut mask = vec![0u8; 36];
+
+    for (i, ch) in prefix.chars().enumerate() {
+        if i >= 58 {
+            break;
+        }
+
+        if let Some(value) = char_to_base32_value(ch) {
+            match i % 8 {
+                0 => {
+                    mask[0] |= 0xF8;
+                    req[0] |= value << 3;
+                },
+                1 => {
+                    mask[0] |= 0x07;
+                    mask[1] |= 0xC0;
+                    req[0] |= (value >> 2) & 0x07;
+                    req[1] |= (value & 0x03) << 6;
+                },
+                2 => {
+                    mask[1] |= 0x3E;
+                    req[1] |= (value << 1) & 0x3E;
+                },
+                3 => {
+                    mask[1] |= 0x01;
+                    mask[2] |= 0xF0;
+                    req[1] |= (value >> 4) & 0x01;
+                    req[2] |= (value & 0x0F) << 4;
+                },
+                4 => {
+                    mask[2] |= 0x0F;
+                    mask[3] |= 0x80;
+                    req[2] |= (value >> 1) & 0x0F;
+                    req[3] |= (value & 0x01) << 7;
+                },
+                5 => {
+                    mask[3] |= 0x7C;
+                    req[3] |= (value << 2) & 0x7C;
+                },
+                6 => {
+                    mask[3] |= 0x03;
+                    mask[4] |= 0xE0;
+                    req[3] |= (value >> 3) & 0x03;
+                    req[4] |= (value & 0x07) << 5;
+                },
+                7 => {
+                    mask[4] |= 0x1F;
+                    req[4] |= value & 0x1F;
+                },
+                _ => unreachable!()
+            }
+        }
+
+        if i > 0 && i % 8 == 7 {
+            let mut new_req = vec![0u8; 36];
+            let mut new_mask = vec![0u8; 36];
+            new_req[..31].copy_from_slice(&req[5..36]);
+            new_mask[..31].copy_from_slice(&mask[5..36]);
+            req = new_req;
+            mask = new_mask;
+        }
+    }
+
+    (req, mask)
+}
+
 fn main() {
-    let args = clap::App::new("lisk-vanity")
+    let args = clap::App::new("algomania-gpu")
         .version(env!("CARGO_PKG_VERSION"))
-        .author("Simon Warta <simon@warta.it>")
-        .about("Generate short Lisk addresses")
+        //.author("Lee Bousfield <ljbousfield@gmail.com>")
+        .about("Generate Algorand cryptocurrency addresses with a given prefix")
         .arg(
-            clap::Arg::with_name("length")
-                .value_name("LENGTH")
-                .default_value("14")
+            clap::Arg::with_name("prefix")
+                .value_name("PREFIX")
                 .required_unless("suffix")
-                .help("The max length for the address"),
-        )
-        .arg(
+                .help("The prefix for the address"),
+        ).arg(
             clap::Arg::with_name("gpu")
                 .short("g")
                 .long("gpu")
                 .help("Enable use of the GPU through OpenCL"),
-        )
-        .arg(
+        ).arg(
             clap::Arg::with_name("limit")
                 .short("l")
                 .long("limit")
                 .value_name("N")
                 .default_value("1")
                 .help("Generate N addresses, then exit (0 for infinite)"),
-        )
-        .arg(
+        ).arg(
             clap::Arg::with_name("gpu_threads")
                 .long("gpu-threads")
                 .value_name("N")
                 .default_value("1048576")
                 .help("The number of GPU threads to use"),
-        )
-        .arg(
+        ).arg(
             clap::Arg::with_name("gpu_local_work_size")
                 .long("gpu-local-work-size")
                 .value_name("N")
-                .help("The GPU local work size. A custom value it may increase performance. By default the OpenCL driver is responsible for setting a proper value. Don't use this if you don't know what you are doing."),
-        )
-        .arg(
+                .help("The GPU local work size. Increasing it may increase performance. For advanced users only."),
+        ).arg(
+            clap::Arg::with_name("gpu_global_work-size")
+                .long("gpu-global-work-size")
+                .value_name("N")
+                .help("The GPU global work size. Increasing it may increase performance. For advanced users only."),
+        ).arg(
             clap::Arg::with_name("no_progress")
                 .long("no-progress")
                 .help("Disable progress output"),
-        )
-        .arg(
-            clap::Arg::with_name("simple_output")
-                .long("simple-output")
-                .help("Output found keys in the form \"[key] [address]\""),
-        )
-        .arg(
+        ).arg(
             clap::Arg::with_name("gpu_platform")
                 .long("gpu-platform")
                 .value_name("INDEX")
                 .default_value("0")
                 .help("The GPU platform to use"),
-        )
-        .arg(
+        ).arg(
             clap::Arg::with_name("gpu_device")
                 .long("gpu-device")
                 .value_name("INDEX")
                 .default_value("0")
                 .help("The GPU device to use"),
-        )
-        .get_matches();
+        ).get_matches();
 
-    let prefix: String = args
-        .value_of("length")
-        .unwrap()
-        .parse()
-        .expect("Failed to parse LENGTH");
+    let ext_pubkey_req: Vec<u8>;
+    let ext_pubkey_mask: Vec<u8>;
+    if let Some(prefix) = args.value_of("prefix") {
+        println!("Processing prefix: {}", prefix);
 
-    println!("Prefix {:?}", prefix);
+        let (req, mask) = create_req_mask_for_prefix(prefix);
+        ext_pubkey_req = req;
+        ext_pubkey_mask = mask;
 
-    // check prefix length here...
-    // assert!(prefix.len() >= 1 && prefix.len() <= 8);
+        if prefix.chars().count() > 58 {
+            eprintln!("Warning: prefix too long.");
+            eprintln!("Only the first 58 characters of your prefix will be used.");
+            eprintln!("");
+        }
+    } else {
+        eprintln!("You must specify a non-empty prefix");
+        process::exit(1);
+    }
 
-    // not yet a mask; soon
-    let mask = base32::decode(base32::Alphabet::RFC4648 { padding: (true) }, &prefix).unwrap();
-    println!("Mask byte prefix is: {:?}", mask);
-
-    let matcher_base = PubkeyMatcher::new(prefix, mask.clone());
+    let matcher_base = PubkeyMatcher::new(ext_pubkey_req, ext_pubkey_mask);
     let estimated_attempts = matcher_base.estimated_attempts();
     let matcher_base = Arc::new(matcher_base);
     let limit = args
@@ -186,11 +236,7 @@ fn main() {
     let found_n_base = Arc::new(AtomicUsize::new(0));
     let attempts_base = Arc::new(AtomicUsize::new(0));
     let output_progress = !args.is_present("no_progress");
-    let simple_output = args.is_present("simple_output");
-    let _generate_passphrase = args.is_present("generate_passphrase");
-
-    let gen_key_type = GenerateKeyType::PrivateKey;
-
+    //let simple_output = args.is_present("simple_output");
     let mut gpu_thread = None;
     if args.is_present("gpu") {
         let gpu_platform = args
@@ -212,51 +258,50 @@ fn main() {
             s.parse()
                 .expect("Failed to parse GPU local work size option")
         });
+        let gpu_global_work_size = args.value_of("gpu_global_work_size").map(|s| {
+            s.parse()
+                .expect("Failed to parse GPU local work size option")
+        });
         let mut key_base = [0u8; 32];
         let params = ThreadParams {
             limit,
-            output_progress,
-            simple_output,
-            generate_key_type: gen_key_type.clone(),
             matcher: matcher_base.clone(),
             found_n: found_n_base.clone(),
             attempts: attempts_base.clone(),
         };
-        let mut gpu = Gpu::new(
-            gpu_platform,
-            gpu_device,
-            gpu_threads,
-            gpu_local_work_size,
-            mask,
-            gen_key_type,
-        )
+        let mut gpu = Gpu::new(GpuOptions {
+            platform_idx: gpu_platform,
+            device_idx: gpu_device,
+            threads: gpu_threads,
+            local_work_size: gpu_local_work_size,
+            global_work_size: gpu_global_work_size,
+            matcher: &params.matcher,
+        })
         .unwrap();
         gpu_thread = Some(thread::spawn(move || {
-            let mut rng = OsRng::new().expect("Failed to get RNG for seed");
-//            let mut count = 0;
+            let mut found_private_key = [0u8; 32];
             loop {
-//                println!("Count {}", count);
-                rng.fill_bytes(&mut key_base);
-//                println!("\n Key_base {:?} \n", key_base);
-                //count += 1;
+                OsRng.fill_bytes(&mut key_base);
                 let found = gpu
-                    .compute(&key_base)
+                    .compute(&mut found_private_key as _, &key_base as _)
                     .expect("Failed to run GPU computation");
                 if output_progress {
                     params
                         .attempts
                         .fetch_add(gpu_threads, atomic::Ordering::Relaxed);
                 }
-                if let Some(found_private_key) = found {
-                    if !check_solution(&params, found_private_key) {
-                        eprintln!(
-                            "GPU returned non-matching solution: {}",
-                            hex::encode_upper(&found_private_key)
-                        );
-                    }
-                } else {
-                    //println!("Yolo, didn't find key...");
-                    // just continue
+                if !found {
+                    continue;
+                }
+
+                if !check_solution(&params, found_private_key) {
+                    eprintln!(
+                        "GPU returned non-matching solution: {}",
+                        hex::encode_upper(&found_private_key),
+                    );
+                }
+                for byte in &mut found_private_key {
+                    *byte = 0;
                 }
             }
         }));

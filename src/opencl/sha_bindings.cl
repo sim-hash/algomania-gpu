@@ -75,6 +75,44 @@ inline void from_sha256_result(uchar *out, const u32 *in) {
 	out[31] = (in[7] >> (0*8)) & 0xff;
 }
 
+inline void from_sha512_256_result(uchar *out, const u64 *in) {
+	out[ 0] = (h32_from_64_S (in[0]) >> (3*8)) & 0xff;
+	out[ 1] = (h32_from_64_S (in[0]) >> (2*8)) & 0xff;
+	out[ 2] = (h32_from_64_S (in[0]) >> (1*8)) & 0xff;
+	out[ 3] = (h32_from_64_S (in[0]) >> (0*8)) & 0xff;
+	out[ 4] = (l32_from_64_S (in[0]) >> (3*8)) & 0xff;
+	out[ 5] = (l32_from_64_S (in[0]) >> (2*8)) & 0xff;
+	out[ 6] = (l32_from_64_S (in[0]) >> (1*8)) & 0xff;
+	out[ 7] = (l32_from_64_S (in[0]) >> (0*8)) & 0xff;
+
+	out[ 8] = (h32_from_64_S (in[1]) >> (3*8)) & 0xff;
+	out[ 9] = (h32_from_64_S (in[1]) >> (2*8)) & 0xff;
+	out[10] = (h32_from_64_S (in[1]) >> (1*8)) & 0xff;
+	out[11] = (h32_from_64_S (in[1]) >> (0*8)) & 0xff;
+	out[12] = (l32_from_64_S (in[1]) >> (3*8)) & 0xff;
+	out[13] = (l32_from_64_S (in[1]) >> (2*8)) & 0xff;
+	out[14] = (l32_from_64_S (in[1]) >> (1*8)) & 0xff;
+	out[15] = (l32_from_64_S (in[1]) >> (0*8)) & 0xff;
+
+	out[16] = (h32_from_64_S (in[2]) >> (3*8)) & 0xff;
+	out[17] = (h32_from_64_S (in[2]) >> (2*8)) & 0xff;
+	out[18] = (h32_from_64_S (in[2]) >> (1*8)) & 0xff;
+	out[19] = (h32_from_64_S (in[2]) >> (0*8)) & 0xff;
+	out[20] = (l32_from_64_S (in[2]) >> (3*8)) & 0xff;
+	out[21] = (l32_from_64_S (in[2]) >> (2*8)) & 0xff;
+	out[22] = (l32_from_64_S (in[2]) >> (1*8)) & 0xff;
+	out[23] = (l32_from_64_S (in[2]) >> (0*8)) & 0xff;
+
+	out[24] = (h32_from_64_S (in[3]) >> (3*8)) & 0xff;
+	out[25] = (h32_from_64_S (in[3]) >> (2*8)) & 0xff;
+	out[26] = (h32_from_64_S (in[3]) >> (1*8)) & 0xff;
+	out[27] = (h32_from_64_S (in[3]) >> (0*8)) & 0xff;
+	out[28] = (l32_from_64_S (in[3]) >> (3*8)) & 0xff;
+	out[29] = (l32_from_64_S (in[3]) >> (2*8)) & 0xff;
+	out[30] = (l32_from_64_S (in[3]) >> (1*8)) & 0xff;
+	out[31] = (l32_from_64_S (in[3]) >> (0*8)) & 0xff;
+}
+
 inline void from_sha512_result(uchar *out, const u64 *in) {
 	out[ 0] = (h32_from_64_S (in[0]) >> (3*8)) & 0xff;
 	out[ 1] = (h32_from_64_S (in[0]) >> (2*8)) & 0xff;
